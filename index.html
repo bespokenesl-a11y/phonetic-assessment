@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phonetic Assessment — BespokenEnglish.com</title>
+<style>
+  :root {
+    --navy: #1E2761;
+    --ice: #CADCFC;
+    --white: #FFFFFF;
+    --gray: #6B7280;
+    --red: #C0392B;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: Calibri, Arial, sans-serif;
+    background: var(--white);
+  }
+  .screen {
+    display: none;
+    min-height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    text-align: center;
+  }
+  .screen.active { display: flex; }
+
+  /* Directions + Thank-you screens */
+  .dark {
+    background: var(--navy);
+    color: var(--white);
+  }
+  .dark h1 {
+    font-family: Cambria, 'Times New Roman', serif;
+    font-size: clamp(28px, 5vw, 44px);
+    margin: 0 0 28px 0;
+  }
+  .dark p {
+    font-size: clamp(16px, 2.2vw, 22px);
+    max-width: 760px;
+    line-height: 1.5;
+    margin: 0 0 14px 0;
+  }
+  .dark p.emph { color: var(--ice); font-weight: bold; }
+  .dark p.record-notice {
+    margin-top: 22px;
+    font-style: italic;
+    color: var(--ice);
+    font-size: clamp(14px, 1.8vw, 18px);
+  }
+
+  .name-field {
+    margin: 28px 0 8px 0;
+    width: 100%;
+    max-width: 420px;
+  }
+  .name-field label {
+    display: block;
+    text-align: left;
+    font-size: 15px;
+    margin-bottom: 6px;
+    color: var(--ice);
+  }
+  .name-field input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+  }
+
+  .btn {
+    margin-top: 30px;
+    padding: 14px 34px;
+    font-size: 17px;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
+    background: var(--ice);
+    color: var(--navy);
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn:hover:not(:disabled) { filter: brightness(1.05); }
+
+  /* Word screens */
+  .word-screen { background: var(--white); color: var(--navy); position: relative; }
+  .progress {
+    position: absolute;
+    top: 28px; left: 32px;
+    font-size: 14px;
+    color: var(--gray);
+  }
+  .rec-indicator {
+    position: absolute;
+    top: 28px; right: 32px;
+    font-size: 14px;
+    color: var(--red);
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .rec-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .word-text {
+    font-family: Cambria, 'Times New Roman', serif;
+    font-weight: bold;
+    font-size: clamp(64px, 14vw, 140px);
+    color: var(--navy);
+    margin: 0;
+    line-height: 1;
+  }
+  .word-hint {
+    margin-top: 22px;
+    font-style: italic;
+    color: var(--gray);
+    font-size: 16px;
+  }
+  .next-btn {
+    position: absolute;
+    bottom: 36px; right: 36px;
+    padding: 14px 30px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
+    background: var(--navy);
+    color: var(--white);
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+  }
+  .next-btn:hover { filter: brightness(1.15); }
+
+  .camera-preview {
+    position: absolute;
+    bottom: 36px; left: 36px;
+    width: 140px; height: 105px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.35);
+  }
+  .camera-preview video {
+    width: 100%; height: 100%; object-fit: cover;
+    transform: scaleX(-1); /* mirror, feels natural */
+  }
+
+  .status-text {
+    font-size: 15px;
+    color: var(--ice);
+    margin-top: 18px;
+    min-height: 20px;
+  }
+  .error-box {
+    margin-top: 20px;
+    padding: 14px 18px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #FFD3D3;
+    max-width: 600px;
+    font-size: 15px;
+    display: none;
+  }
+  .download-link {
+    margin-top: 16px;
+    color: var(--ice);
+    font-size: 14px;
+    text-decoration: underline;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+  <!-- ===================== DIRECTIONS SCREEN ===================== -->
+  <div id="screen-directions" class="screen dark active">
+    <h1>Phonetic Assessment</h1>
+    <p>These words contain all the sounds in American English.</p>
+    <p>The results of this assessment will give us a precise list of sounds you need to practice.</p>
+    <p class="emph">Say each word TWO TIMES and click next.</p>
+    <p class="emph">There are 56 words.</p>
+    <p class="record-notice">This assessment will be recorded when you click Start.</p>
+
+    <div class="name-field">
+      <label for="studentName">Your name (so we can match your results)</label>
+      <input type="text" id="studentName" placeholder="First and last name" autocomplete="name">
+    </div>
+
+    <button class="btn" id="startBtn">Start ▶</button>
+    <div class="error-box" id="startError"></div>
+  </div>
+
+  <!-- ===================== WORD SCREEN (template) ===================== -->
+  <div id="screen-word" class="screen word-screen">
+    <div class="progress" id="progressText">Word 1 of 56</div>
+    <div class="rec-indicator"><span class="rec-dot"></span> REC</div>
+    <div class="camera-preview"><video id="cameraPreview" autoplay muted playsinline></video></div>
+    <div class="word-text" id="wordText">word</div>
+    <div class="word-hint">Say it twice, then click Next</div>
+    <button class="next-btn" id="nextBtn">Next ▶</button>
+  </div>
+
+  <!-- ===================== THANK YOU / UPLOAD SCREEN ===================== -->
+  <div id="screen-thanks" class="screen dark">
+    <h1 style="font-size: clamp(22px, 3.5vw, 30px);">Thank you for recording your speech sample.</h1>
+    <p>The results will be reviewed by your trainer and they will reach out to you with a customized curriculum to make you a clear, confident speaker.</p>
+    <div class="status-text" id="uploadStatus">Saving your recording…</div>
+    <a class="download-link" id="downloadLink" href="#" download="assessment-recording.webm">If saving is taking too long, click here to download a backup copy.</a>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- CONFIGURE THIS AFTER YOU DEPLOY THE APPS SCRIPT ----
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzcybfBt7It4OZ5VShr8RrpSVt4r08t4w1nv7pGK0SL89Nq2y5vvRFpTPg8Lf3Vm6D_hg/exec";
+
+  var WORDS = [
+    "pop","cab","boat","read","book","leg","safe","five","van","bath",
+    "this","bathe","bus","nose","wish","ship","beige","watch","chair","cage",
+    "jump","him","sun","ball","yes","thing","time","or","good","fire",
+    "man","zoom","about","girl","cover","ear","our","far","mitten","bottle",
+    "wasp","nest","desk","gift","kept","duct","point","hand","sink","belt",
+    "cold","milk","fix","cats","beds","genre"
+  ];
+  var TOTAL = WORDS.length;
+
+  var screenDirections = document.getElementById("screen-directions");
+  var screenWord = document.getElementById("screen-word");
+  var screenThanks = document.getElementById("screen-thanks");
+
+  var startBtn = document.getElementById("startBtn");
+  var startError = document.getElementById("startError");
+  var studentNameInput = document.getElementById("studentName");
+  var nextBtn = document.getElementById("nextBtn");
+  var wordText = document.getElementById("wordText");
+  var progressText = document.getElementById("progressText");
+  var cameraPreview = document.getElementById("cameraPreview");
+  var uploadStatus = document.getElementById("uploadStatus");
+  var downloadLink = document.getElementById("downloadLink");
+
+  var currentIndex = 0; // 0-based into WORDS
+  var mediaStream = null;
+  var mediaRecorder = null;
+  var recordedChunks = [];
+  var studentName = "";
+
+  function showScreen(el) {
+    [screenDirections, screenWord, screenThanks].forEach(function (s) {
+      s.classList.remove("active");
+    });
+    el.classList.add("active");
+  }
+
+  function pickMimeType() {
+    var candidates = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+      "video/mp4"
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidates[i])) {
+        return candidates[i];
+      }
+    }
+    return "";
+  }
+
+  function startAssessment() {
+    studentName = (studentNameInput.value || "").trim();
+    if (!studentName) {
+      startError.style.display = "block";
+      startError.textContent = "Please enter your name before starting.";
+      studentNameInput.focus();
+      return;
+    }
+    startError.style.display = "none";
+    startBtn.disabled = true;
+    startBtn.textContent = "Requesting camera…";
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(function (stream) {
+        mediaStream = stream;
+        cameraPreview.srcObject = stream;
+
+        var mimeType = pickMimeType();
+        var options = mimeType ? { mimeType: mimeType } : undefined;
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorder.ondataavailable = function (e) {
+          if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+        };
+        mediaRecorder.start();
+
+        currentIndex = 0;
+        renderWord();
+        showScreen(screenWord);
+      })
+      .catch(function (err) {
+        startBtn.disabled = false;
+        startBtn.textContent = "Start ▶";
+        startError.style.display = "block";
+        startError.textContent = "We need camera and microphone access to record this assessment. Please allow access and try again. (" + err.message + ")";
+      });
+  }
+
+  function renderWord() {
+    wordText.textContent = WORDS[currentIndex];
+    progressText.textContent = "Word " + (currentIndex + 1) + " of " + TOTAL;
+    nextBtn.textContent = (currentIndex === TOTAL - 1) ? "Finish ▶" : "Next ▶";
+  }
+
+  function goNext() {
+    if (currentIndex < TOTAL - 1) {
+      currentIndex++;
+      renderWord();
+    } else {
+      finishAssessment();
+    }
+  }
+
+  function finishAssessment() {
+    showScreen(screenThanks);
+
+    if (!mediaRecorder) {
+      uploadStatus.textContent = "Nothing was recorded.";
+      return;
+    }
+
+    mediaRecorder.onstop = function () {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(function (t) { t.stop(); });
+      }
+      var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "video/webm" });
+      uploadRecording(blob);
+    };
+    mediaRecorder.stop();
+  }
+
+  function uploadRecording(blob) {
+    var localUrl = URL.createObjectURL(blob);
+    downloadLink.href = localUrl;
+    var ext = (blob.type.indexOf("mp4") > -1) ? "mp4" : "webm";
+    downloadLink.setAttribute("download", studentName.replace(/[^a-zA-Z0-9_\-]/g, "_") + "-assessment." + ext);
+
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0) {
+      uploadStatus.textContent = "Recording complete. (Upload isn't configured yet — use the backup download link below.)";
+      downloadLink.style.display = "inline-block";
+      return;
+    }
+
+    var showDownloadTimer = setTimeout(function () {
+      downloadLink.style.display = "inline-block";
+    }, 8000);
+
+    var reader = new FileReader();
+    reader.onloadend = function () {
+      var base64 = String(reader.result).split(",")[1];
+      fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids CORS preflight to Apps Script
+        body: JSON.stringify({
+          data: base64,
+          mimeType: blob.type || "video/webm",
+          studentName: studentName
+        })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (json) {
+          clearTimeout(showDownloadTimer);
+          if (json.success) {
+            uploadStatus.textContent = "Your recording has been saved. You're all set!";
+          } else {
+            uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
+            downloadLink.style.display = "inline-block";
+          }
+        })
+        .catch(function () {
+          clearTimeout(showDownloadTimer);
+          uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
+          downloadLink.style.display = "inline-block";
+        });
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  startBtn.addEventListener("click", startAssessment);
+  nextBtn.addEventListener("click", goNext);
+})();
+</script>
+</body>
+</html>
