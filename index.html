@@ -149,6 +149,19 @@
   }
   .next-btn:hover { filter: brightness(1.15); }
 
+  .finish-early {
+    position: absolute;
+    bottom: 40px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    color: var(--gray);
+    text-decoration: underline;
+    cursor: pointer;
+    background: none;
+    border: none;
+  }
+  .finish-early:hover { color: var(--navy); }
+
   .camera-preview {
     position: absolute;
     bottom: 36px; left: 36px;
@@ -216,6 +229,7 @@
     <div class="word-text" id="wordText">word</div>
     <div class="word-hint">Say it twice, then click Next</div>
     <button class="next-btn" id="nextBtn">Next ▶</button>
+    <button class="finish-early" id="finishEarlyBtn" type="button">End early &amp; save what I have</button>
   </div>
 
   <!-- ===================== THANK YOU / UPLOAD SCREEN ===================== -->
@@ -251,6 +265,7 @@
   var startError = document.getElementById("startError");
   var studentNameInput = document.getElementById("studentName");
   var nextBtn = document.getElementById("nextBtn");
+  var finishEarlyBtn = document.getElementById("finishEarlyBtn");
   var wordText = document.getElementById("wordText");
   var progressText = document.getElementById("progressText");
   var cameraPreview = document.getElementById("cameraPreview");
@@ -356,6 +371,51 @@
     mediaRecorder.stop();
   }
 
+  // Recordings can be tens of MB. Converting that much data to base64 in one
+  // FileReader.readAsDataURL() call is unreliable on some browsers (it can
+  // silently return empty/short results). So instead we slice the recording
+  // into small pieces and upload them one at a time; the server stitches
+  // them back together once the last piece arrives.
+  var CHUNK_SIZE = 1500000; // bytes, before base64 encoding
+
+  function readChunkAsBase64(chunkBlob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = function () {
+        reject(new Error("Could not read part of the recording."));
+      };
+      reader.onloadend = function () {
+        var result = reader.result;
+        if (!result) {
+          reject(new Error("Empty read result for a recording chunk."));
+          return;
+        }
+        resolve(String(result).split(",")[1] || "");
+      };
+      reader.readAsDataURL(chunkBlob);
+    });
+  }
+
+  function postChunk(payload, attempt) {
+    attempt = attempt || 1;
+    return fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids CORS preflight to Apps Script
+      body: JSON.stringify(payload)
+    })
+      .then(function (res) { return res.json(); })
+      .catch(function (err) {
+        if (attempt < 3) {
+          return new Promise(function (resolve) {
+            setTimeout(resolve, 1000 * attempt);
+          }).then(function () {
+            return postChunk(payload, attempt + 1);
+          });
+        }
+        throw err;
+      });
+  }
+
   function uploadRecording(blob) {
     var localUrl = URL.createObjectURL(blob);
     downloadLink.href = localUrl;
@@ -368,43 +428,69 @@
       return;
     }
 
+    if (!blob || blob.size === 0) {
+      uploadStatus.textContent = "We couldn't capture any recording. Please use the backup download link below and send it to your trainer.";
+      downloadLink.style.display = "inline-block";
+      return;
+    }
+
     var showDownloadTimer = setTimeout(function () {
       downloadLink.style.display = "inline-block";
-    }, 8000);
+    }, 20000);
 
-    var reader = new FileReader();
-    reader.onloadend = function () {
-      var base64 = String(reader.result).split(",")[1];
-      fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids CORS preflight to Apps Script
-        body: JSON.stringify({
-          data: base64,
-          mimeType: blob.type || "video/webm",
-          studentName: studentName
-        })
-      })
-        .then(function (res) { return res.json(); })
-        .then(function (json) {
-          clearTimeout(showDownloadTimer);
-          if (json.success) {
-            uploadStatus.textContent = "Your recording has been saved. You're all set!";
-          } else {
-            uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
-            downloadLink.style.display = "inline-block";
+    var uploadId = "u" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    var totalChunks = Math.max(1, Math.ceil(blob.size / CHUNK_SIZE));
+
+    (async function () {
+      try {
+        for (var i = 0; i < totalChunks; i++) {
+          var start = i * CHUNK_SIZE;
+          var end = Math.min(start + CHUNK_SIZE, blob.size);
+          var chunkBlob = blob.slice(start, end);
+          var base64Chunk = await readChunkAsBase64(chunkBlob);
+          var isLast = (i === totalChunks - 1);
+
+          uploadStatus.textContent = "Saving your recording… (" + (i + 1) + " of " + totalChunks + ")";
+
+          var payload = {
+            uploadId: uploadId,
+            chunkIndex: i,
+            totalChunks: totalChunks,
+            data: base64Chunk,
+            isLast: isLast
+          };
+          if (isLast) {
+            payload.mimeType = blob.type || "video/webm";
+            payload.studentName = studentName;
           }
-        })
-        .catch(function () {
-          clearTimeout(showDownloadTimer);
-          uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
-          downloadLink.style.display = "inline-block";
-        });
-    };
-    reader.readAsDataURL(blob);
+
+          var json = await postChunk(payload);
+
+          if (isLast) {
+            clearTimeout(showDownloadTimer);
+            if (json && json.success) {
+              uploadStatus.textContent = "Your recording has been saved. You're all set!";
+            } else {
+              uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
+              downloadLink.style.display = "inline-block";
+            }
+          }
+        }
+      } catch (err) {
+        clearTimeout(showDownloadTimer);
+        uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
+        downloadLink.style.display = "inline-block";
+      }
+    })();
   }
 
   startBtn.addEventListener("click", startAssessment);
   nextBtn.addEventListener("click", goNext);
+  finishEarlyBtn.addEventListener("click", function () {
+    if (confirm("Stop here and save what's been recorded so far?")) {
+      finishAssessment();
+    }
+  });
 })();
 </script>
 </body>
