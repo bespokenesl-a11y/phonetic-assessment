@@ -245,7 +245,7 @@
   "use strict";
 
   // ---- CONFIGURE THIS AFTER YOU DEPLOY THE APPS SCRIPT ----
-  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzcybfBt7It4OZ5VShr8RrpSVt4r08t4w1nv7pGK0SL89Nq2y5vvRFpTPg8Lf3Vm6D_hg/exec";
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzcybfBt7lt4OZ5VShr8RrpSVt4r08t4w1nv7pGK0SL89Nq2y5vvRFpTPg8Lf3Vm6D_hg/exec";
 
   var WORDS = [
     "pop","cab","boat","read","book","leg","safe","five","van","bath",
@@ -376,7 +376,7 @@
   // silently return empty/short results). So instead we slice the recording
   // into small pieces and upload them one at a time; the server stitches
   // them back together once the last piece arrives.
-  var CHUNK_SIZE = 1500000; // bytes, before base64 encoding
+  var CHUNK_SIZE = 4000000; // bytes, before base64 encoding
 
   function readChunkAsBase64(chunkBlob) {
     return new Promise(function (resolve, reject) {
