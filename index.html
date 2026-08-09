@@ -240,12 +240,23 @@
     <a class="download-link" id="downloadLink" href="#" download="assessment-recording.webm">If saving is taking too long, click here to download a backup copy.</a>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
 <script>
 (function () {
   "use strict";
 
-  // ---- CONFIGURE THIS AFTER YOU DEPLOY THE APPS SCRIPT ----
-  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzcybfBt7It4OZ5VShr8RrpSVt4r08t4w1nv7pGK0SL89Nq2y5vvRFpTPg8Lf3Vm6D_hg/exec";
+  // Recordings upload directly to Supabase Storage using a resumable (TUS
+  // protocol) upload — a standard, maintained library instead of the
+  // hand-rolled base64/chunking pipeline this used to POST to Google Apps
+  // Script + Drive. The anon/publishable key below is safe to expose in
+  // client code; a Storage RLS policy on the "recordings" bucket only lets
+  // this key INSERT new files, not list, read, or delete anything.
+  var SUPABASE_PROJECT_ID = "zqcwhsxaawmrckbglcim";
+  var SUPABASE_ANON_KEY = "sb_publishable_0x-TxeUzQaB1_rsP7bnrRw_jBR9icOD";
+  var SUPABASE_BUCKET = "recordings";
+  // Direct storage hostname (not the general project URL) is recommended by
+  // Supabase for large-file upload performance.
+  var SUPABASE_STORAGE_ENDPOINT = "https://" + SUPABASE_PROJECT_ID + ".storage.supabase.co/storage/v1/upload/resumable";
 
   var WORDS = [
     "pop","cab","boat","read","book","leg","safe","five","van","bath",
@@ -371,62 +382,16 @@
     mediaRecorder.stop();
   }
 
-  // Recordings can be tens of MB. Converting that much data to base64 in one
-  // FileReader.readAsDataURL() call is unreliable on some browsers (it can
-  // silently return empty/short results). So instead we slice the recording
-  // into small pieces and upload them one at a time; the server stitches
-  // them back together once the last piece arrives.
-  var CHUNK_SIZE = 1500000; // bytes, before base64 encoding
-
-  function readChunkAsBase64(chunkBlob) {
-    return new Promise(function (resolve, reject) {
-      var reader = new FileReader();
-      reader.onerror = function () {
-        reject(new Error("Could not read part of the recording."));
-      };
-      reader.onloadend = function () {
-        var result = reader.result;
-        if (!result) {
-          reject(new Error("Empty read result for a recording chunk."));
-          return;
-        }
-        resolve(String(result).split(",")[1] || "");
-      };
-      reader.readAsDataURL(chunkBlob);
-    });
-  }
-
-  function postChunk(payload, attempt) {
-    attempt = attempt || 1;
-    return fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoids CORS preflight to Apps Script
-      body: JSON.stringify(payload)
-    })
-      .then(function (res) { return res.json(); })
-      .catch(function (err) {
-        if (attempt < 3) {
-          return new Promise(function (resolve) {
-            setTimeout(resolve, 1000 * attempt);
-          }).then(function () {
-            return postChunk(payload, attempt + 1);
-          });
-        }
-        throw err;
-      });
+  function sanitizeName(s) {
+    return (s || "unknown-student").replace(/[^a-zA-Z0-9_-]/g, "_");
   }
 
   function uploadRecording(blob) {
     var localUrl = URL.createObjectURL(blob);
     downloadLink.href = localUrl;
     var ext = (blob.type.indexOf("mp4") > -1) ? "mp4" : "webm";
-    downloadLink.setAttribute("download", studentName.replace(/[^a-zA-Z0-9_\-]/g, "_") + "-assessment." + ext);
-
-    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0) {
-      uploadStatus.textContent = "Recording complete. (Upload isn't configured yet — use the backup download link below.)";
-      downloadLink.style.display = "inline-block";
-      return;
-    }
+    var safeName = sanitizeName(studentName);
+    downloadLink.setAttribute("download", safeName + "-assessment." + ext);
 
     if (!blob || blob.size === 0) {
       uploadStatus.textContent = "We couldn't capture any recording. Please use the backup download link below and send it to your trainer.";
@@ -438,50 +403,46 @@
       downloadLink.style.display = "inline-block";
     }, 20000);
 
-    var uploadId = "u" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-    var totalChunks = Math.max(1, Math.ceil(blob.size / CHUNK_SIZE));
+    var timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    var objectName = safeName + "_" + timestamp + "." + ext;
 
-    (async function () {
-      try {
-        for (var i = 0; i < totalChunks; i++) {
-          var start = i * CHUNK_SIZE;
-          var end = Math.min(start + CHUNK_SIZE, blob.size);
-          var chunkBlob = blob.slice(start, end);
-          var base64Chunk = await readChunkAsBase64(chunkBlob);
-          var isLast = (i === totalChunks - 1);
-
-          uploadStatus.textContent = "Saving your recording… (" + (i + 1) + " of " + totalChunks + ")";
-
-          var payload = {
-            uploadId: uploadId,
-            chunkIndex: i,
-            totalChunks: totalChunks,
-            data: base64Chunk,
-            isLast: isLast
-          };
-          if (isLast) {
-            payload.mimeType = blob.type || "video/webm";
-            payload.studentName = studentName;
-          }
-
-          var json = await postChunk(payload);
-
-          if (isLast) {
-            clearTimeout(showDownloadTimer);
-            if (json && json.success) {
-              uploadStatus.textContent = "Your recording has been saved. You're all set!";
-            } else {
-              uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
-              downloadLink.style.display = "inline-block";
-            }
-          }
-        }
-      } catch (err) {
+    var upload = new tus.Upload(blob, {
+      endpoint: SUPABASE_STORAGE_ENDPOINT,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: "Bearer " + SUPABASE_ANON_KEY,
+        "x-upsert": "true"
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      metadata: {
+        bucketName: SUPABASE_BUCKET,
+        objectName: objectName,
+        contentType: blob.type || "video/webm",
+        cacheControl: "3600"
+      },
+      chunkSize: 6 * 1024 * 1024, // required by Supabase's TUS implementation — do not change
+      onError: function (error) {
         clearTimeout(showDownloadTimer);
         uploadStatus.textContent = "We couldn't save your recording automatically. Please use the backup download link below and send it to your trainer.";
         downloadLink.style.display = "inline-block";
+      },
+      onProgress: function (bytesUploaded, bytesTotal) {
+        var pct = Math.round((bytesUploaded / bytesTotal) * 100);
+        uploadStatus.textContent = "Saving your recording… (" + pct + "%)";
+      },
+      onSuccess: function () {
+        clearTimeout(showDownloadTimer);
+        uploadStatus.textContent = "Your recording has been saved. You're all set!";
       }
-    })();
+    });
+
+    upload.findPreviousUploads().then(function (previousUploads) {
+      if (previousUploads.length) {
+        upload.resumeFromPreviousUpload(previousUploads[0]);
+      }
+      upload.start();
+    });
   }
 
   startBtn.addEventListener("click", startAssessment);
