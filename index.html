@@ -376,7 +376,7 @@
   // silently return empty/short results). So instead we slice the recording
   // into small pieces and upload them one at a time; the server stitches
   // them back together once the last piece arrives.
-  var CHUNK_SIZE = 3000000; // bytes, before base64 encoding
+  var CHUNK_SIZE = 1500000; // bytes, before base64 encoding
 
   function readChunkAsBase64(chunkBlob) {
     return new Promise(function (resolve, reject) {
