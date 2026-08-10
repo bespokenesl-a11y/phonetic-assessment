@@ -252,7 +252,12 @@
   // client code; a Storage RLS policy on the "recordings" bucket only lets
   // this key INSERT new files, not list, read, or delete anything.
   var SUPABASE_PROJECT_ID = "zqcwhsxaawmrckbglcim";
-  var SUPABASE_ANON_KEY = "sb_publishable_0x-TxeUzQaB1_rsP7bnrRw_jBR9icOD";
+  // NOTE: this must be the legacy JWT-format anon key (starts with "eyJ..."),
+  // not the newer "sb_publishable_..." key. Confirmed by testing directly
+  // against the live endpoint: the new-format key gets rejected by the
+  // Storage upload API with "Invalid Compact JWS" (it isn't a JWT), while
+  // this legacy key works correctly with the resumable/TUS upload endpoint.
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxY3doc3hhYXdtcmNrYmdsY2ltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2MDcwMTAsImV4cCI6MjA5OTE4MzAxMH0.Po9nINJ7rWtnP_iH6jyg322MvgW4ayrXLFbyJVrn8b4";
   var SUPABASE_BUCKET = "recordings";
   // Direct storage hostname (not the general project URL) is recommended by
   // Supabase for large-file upload performance.
