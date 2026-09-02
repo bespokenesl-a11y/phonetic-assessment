@@ -507,7 +507,12 @@ downloadLink.style.display = "inline-block";
 }, 20000);
 
 var timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-var objectName = safeName + "_" + timestamp + "." + ext;
+var randomToken = (function(){
+var bytes = new Uint8Array(6);
+(window.crypto || window.msCrypto).getRandomValues(bytes);
+return Array.prototype.map.call(bytes, function(b){ return b.toString(16).padStart(2, "0"); }).join("");
+})();
+var objectName = safeName + "_" + timestamp + "_" + randomToken + "." + ext;
 
 var upload = new tus.Upload(blob, {
 endpoint: SUPABASE_STORAGE_ENDPOINT,
